@@ -41,7 +41,7 @@ HOMEWORK_VERDICTS = {
 }
 
 
-class InvalidResponseCode(Exception):
+class InvalidResponseCodeError(Exception):
     """Исключение при неверном коде ответа API."""
 
     pass
@@ -99,7 +99,7 @@ def get_api_answer(timestamp: int) -> dict:
         ) from error
 
     if response.status_code != HTTPStatus.OK:
-        raise InvalidResponseCode(
+        raise InvalidResponseCodeError(
             f'Неверный код ответа API: {response.status_code}. '
             f'Причина: {response.reason}. '
             f'Текст: {response.text}'
