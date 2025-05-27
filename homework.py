@@ -2,11 +2,16 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
-from http import HTTPStatus
+
+from exceptions import (
+    InvalidResponseCodeError,
+    MissingEnvironmentVariableError
+)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -41,12 +46,6 @@ HOMEWORK_VERDICTS = {
 }
 
 
-class InvalidResponseCodeError(Exception):
-    """Исключение при неверном коде ответа API."""
-
-    pass
-
-
 def check_tokens() -> bool:
     """Проверяет доступность переменных окружения."""
     tokens = {
@@ -55,12 +54,13 @@ def check_tokens() -> bool:
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
     }
     missing = [name for name, value in tokens.items() if not value]
+
     if missing:
         logger.critical(
             'Отсутствуют обязательные переменные окружения: %s',
             ', '.join(missing)
         )
-        sys.exit('Программа принудительно остановлена.')
+        raise MissingEnvironmentVariableError(missing)
 
 
 def send_message(bot: TeleBot, message: str) -> bool:
@@ -83,26 +83,29 @@ def get_api_answer(timestamp: int) -> dict:
     }
 
     logger.info(
-        f'Запрос к API: {request_params["url"]} '
-        f'с заголовками {request_params["headers"]} '
-        f'и параметрами {request_params["params"]}'
+        'Запрос к API: {url} с заголовками {headers} и параметрами {params}'
+        .format(**request_params)
     )
 
     try:
         response = requests.get(**request_params)
+
     except requests.exceptions.RequestException as error:
         raise ConnectionError(
-            f'Ошибка подключения к API: {error}. '
-            f'URL: {request_params["url"]}, '
-            f'заголовки: {request_params["headers"]}, '
-            f'параметры: {request_params["params"]}'
+            (
+                'Ошибка подключения к API: {error}. '
+                'URL: {url}, заголовки: {headers}, параметры: {params}'
+            ).format(error=error, **request_params)
         ) from error
 
     if response.status_code != HTTPStatus.OK:
         raise InvalidResponseCodeError(
-            f'Неверный код ответа API: {response.status_code}. '
-            f'Причина: {response.reason}. '
-            f'Текст: {response.text}'
+            'Неверный код ответа API: {}. Причина: {}. Текст: {}'
+            .format(
+                response.status_code,
+                response.reason,
+                response.text
+            )
         )
 
     return response.json()
@@ -136,12 +139,16 @@ def parse_status(homework: dict) -> str:
 
 def main() -> None:
     """Основная логика работы бота."""
-    check_tokens()
+    try:
+        check_tokens()
+    except MissingEnvironmentVariableError as error:
+        sys.exit(
+            'Программа принудительно остановлена: {}'.format(error)
+        )
 
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
-    last_error = None
-    last_status = None
+    last_message = ''
 
     while True:
         try:
@@ -155,19 +162,16 @@ def main() -> None:
             homework = homeworks[0]
             message = parse_status(homework)
 
-            if homework['status'] != last_status:
-                if send_message(bot, message):
-                    last_status = homework['status']
-                    timestamp = response.get('current_date', timestamp)
+            if message != last_message and send_message(bot, message):
+                last_message = message
+                timestamp = response.get('current_date', timestamp)
 
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            logger.error(message)
-            if str(error) != last_error:
-                if send_message(bot, message):
-                    last_error = str(error)
-                else:
-                    logger.error('Не удалось отправить сообщение об ошибке')
+            message = 'Сбой в работе программы: {}'.format(error)
+            logger.exception(message)
+            if message != last_message and send_message(bot, message):
+                last_message = message
+
         finally:
             time.sleep(RETRY_PERIOD)
 
