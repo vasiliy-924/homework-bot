@@ -60,7 +60,10 @@ def check_tokens() -> bool:
             'Отсутствуют обязательные переменные окружения: %s',
             ', '.join(missing)
         )
-        raise MissingEnvironmentVariableError(missing)
+        raise MissingEnvironmentVariableError(
+            'Отсутствуют обязательные переменные окружения: '
+            f'{", ".join(missing)}'
+        )
 
 
 def send_message(bot: TeleBot, message: str) -> bool:
@@ -100,12 +103,8 @@ def get_api_answer(timestamp: int) -> dict:
 
     if response.status_code != HTTPStatus.OK:
         raise InvalidResponseCodeError(
-            'Неверный код ответа API: {}. Причина: {}. Текст: {}'
-            .format(
-                response.status_code,
-                response.reason,
-                response.text
-            )
+            f'Неверный код ответа API: {response.status_code}. '
+            f'Причина: {response.reason}. Текст: {response.text}'
         )
 
     return response.json()
@@ -139,13 +138,7 @@ def parse_status(homework: dict) -> str:
 
 def main() -> None:
     """Основная логика работы бота."""
-    try:
-        check_tokens()
-    except MissingEnvironmentVariableError as error:
-        sys.exit(
-            'Программа принудительно остановлена: {}'.format(error)
-        )
-
+    check_tokens()
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
     last_message = ''
@@ -167,7 +160,7 @@ def main() -> None:
                 timestamp = response.get('current_date', timestamp)
 
         except Exception as error:
-            message = 'Сбой в работе программы: {}'.format(error)
+            message = f'Сбой в работе программы: {error}'
             logger.exception(message)
             if message != last_message and send_message(bot, message):
                 last_message = message
